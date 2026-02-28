@@ -58,6 +58,9 @@ def search_category(
     """
     Search Google for LinkedIn posts matching keywords in one category.
 
+    If the keyword list is long (>8), it splits into smaller batches
+    to prevent Google from ignoring the site:linkedin.com filter.
+
     Args:
         category: Category name (e.g., "Cell/Battery Tester")
         keywords: List of keyword strings for this category
@@ -66,46 +69,67 @@ def search_category(
     Returns:
         List of SearchResult objects
     """
-    query = build_search_query(category, keywords)
-    logger.info(f"[{category}] Searching: {query[:120]}...")
+    # Split keywords into batches of 8 to keep queries short enough
+    # that Google respects the site: filter
+    BATCH_SIZE = 8
+    keyword_batches = [
+        keywords[i : i + BATCH_SIZE]
+        for i in range(0, len(keywords), BATCH_SIZE)
+    ]
 
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": config.serpapi_key,
-        "num": config.max_results_per_category,
-        "tbs": config.time_filter,  # Time-based filter (e.g., past week)
-        "hl": "en",
-        "gl": "in",  # Geo-location India (relevant for ADOR Digatron)
-    }
+    all_parsed: List[SearchResult] = []
+    seen_urls: set = set()
 
-    try:
-        search = GoogleSearch(params)
-        results = search.get_dict()
-    except Exception as e:
-        logger.error(f"[{category}] SerpAPI request failed: {e}")
-        return []
+    for batch_idx, batch in enumerate(keyword_batches):
+        query = build_search_query(category, batch)
+        if len(keyword_batches) > 1:
+            logger.info(
+                f"[{category}] Batch {batch_idx + 1}/{len(keyword_batches)}: "
+                f"{query[:100]}..."
+            )
+        else:
+            logger.info(f"[{category}] Searching: {query[:120]}...")
 
-    organic = results.get("organic_results", [])
-    logger.info(f"[{category}] Found {len(organic)} results")
+        params = {
+            "engine": "google",
+            "q": query,
+            "api_key": config.serpapi_key,
+            "num": config.max_results_per_category,
+            "tbs": config.time_filter,  # Time-based filter (e.g., past week)
+            "hl": "en",
+            "gl": "in",  # Geo-location India (relevant for ADOR Digatron)
+        }
 
-    parsed: List[SearchResult] = []
-    for item in organic:
-        url = _clean_linkedin_url(item.get("link", ""))
-        if "linkedin.com" not in url:
+        try:
+            search = GoogleSearch(params)
+            results = search.get_dict()
+        except Exception as e:
+            logger.error(f"[{category}] SerpAPI request failed: {e}")
             continue
 
-        parsed.append(
-            SearchResult(
-                title=item.get("title", "Untitled Post"),
-                url=url,
-                snippet=item.get("snippet", ""),
-                category=category,
-                found_at=datetime.utcnow().isoformat(),
-            )
-        )
+        organic = results.get("organic_results", [])
+        logger.info(f"[{category}] Batch {batch_idx + 1} found {len(organic)} results")
 
-    return parsed
+        for item in organic:
+            url = _clean_linkedin_url(item.get("link", ""))
+            if "linkedin.com" not in url:
+                continue
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+
+            all_parsed.append(
+                SearchResult(
+                    title=item.get("title", "Untitled Post"),
+                    url=url,
+                    snippet=item.get("snippet", ""),
+                    category=category,
+                    found_at=datetime.utcnow().isoformat(),
+                )
+            )
+
+    logger.info(f"[{category}] Total: {len(all_parsed)} unique LinkedIn results")
+    return all_parsed
 
 
 def search_all_categories(
