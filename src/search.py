@@ -93,7 +93,7 @@ def search_category(
         params = {
             "engine": "google",
             "q": query,
-            "api_key": config.serpapi_key,
+            "api_key": config.get_next_key(),
             "num": config.max_results_per_category,
             "tbs": config.time_filter,  # Time-based filter (e.g., past week)
             "hl": "en",
@@ -150,11 +150,16 @@ def search_all_categories(
     if config is None:
         config = SearchConfig()
 
-    if not config.serpapi_key:
+    if not config.serpapi_keys:
         logger.error(
-            "SERPAPI_KEY not set. Export it as an environment variable."
+            "SERPAPI_KEY not set. Export it as an environment variable. "
+            "Supports multiple comma-separated keys for rotation."
         )
         return {}
+
+    logger.info(
+        f"Using {len(config.serpapi_keys)} SerpAPI key(s) with rotation"
+    )
 
     target_categories = categories or list(KEYWORD_CATEGORIES.keys())
 
