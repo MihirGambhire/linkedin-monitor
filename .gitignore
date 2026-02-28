@@ -1,0 +1,26 @@
+# screenshots directory (generated at runtime)
+screenshots/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.env.local
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
