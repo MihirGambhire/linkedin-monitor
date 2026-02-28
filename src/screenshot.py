@@ -50,13 +50,16 @@ async def capture_screenshot(
             page = await context.new_page()
 
             # Navigate to the URL
+            # Use 'domcontentloaded' instead of 'networkidle' because
+            # LinkedIn continuously loads tracking/analytics scripts
+            # and never reaches networkidle state
             await page.goto(
                 url,
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
                 timeout=config.timeout_seconds * 1000,
             )
 
-            # Wait a bit for dynamic content to render
+            # Wait for page content to render visually
             await page.wait_for_timeout(config.wait_seconds * 1000)
 
             # Dismiss any LinkedIn login modals/overlays if they appear
