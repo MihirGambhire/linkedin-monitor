@@ -1,0 +1,89 @@
+name: LinkedIn Keyword Monitor
+
+on:
+  schedule:
+    - cron: "30 3 * * 1,4"
+
+  workflow_dispatch:
+    inputs:
+      categories:
+        description: "Comma-separated categories (leave empty for all)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run (search only, no email)"
+        required: false
+        type: boolean
+        default: false
+      no_screenshots:
+        description: "Skip screenshots (faster)"
+        required: false
+        type: boolean
+        default: false
+      time_filter:
+        description: "Time filter: qdr:d (day), qdr:w (week), qdr:m (month)"
+        required: false
+        default: "qdr:w"
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        if: ${{ github.event.inputs.dry_run != 'true' && github.event.inputs.no_screenshots != 'true' }}
+        run: playwright install chromium --with-deps
+
+      - name: Run LinkedIn Keyword Monitor
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        run: |
+          CMD="python main.py"
+
+          if [ -n "${{ github.event.inputs.categories }}" ]; then
+            IFS=',' read -ra CATS <<< "${{ github.event.inputs.categories }}"
+            CMD="$CMD --categories"
+            for cat in "${CATS[@]}"; do
+              CMD="$CMD \"$(echo $cat | xargs)\""
+            done
+          fi
+
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            CMD="$CMD --dry-run"
+          fi
+
+          if [ "${{ github.event.inputs.no_screenshots }}" == "true" ]; then
+            CMD="$CMD --no-screenshots"
+          fi
+
+          CMD="$CMD --time-filter ${{ github.event.inputs.time_filter || 'qdr:w' }}"
+
+          echo "Running: $CMD"
+          eval $CMD
+
+      - name: Upload screenshots as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkedin-screenshots-${{ github.run_number }}
+          path: screenshots/
+          retention-days: 7
+          if-no-files-found: ignore
