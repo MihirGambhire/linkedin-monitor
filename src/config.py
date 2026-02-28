@@ -86,10 +86,24 @@ KEYWORD_CATEGORIES: Dict[str, List[str]] = {
 class SearchConfig:
     """Search configuration parameters."""
 
-    # SerpAPI key (from environment)
-    serpapi_key: str = field(
-        default_factory=lambda: os.environ.get("SERPAPI_KEY", "")
+    # SerpAPI keys (comma-separated for rotation)
+    # e.g. SERPAPI_KEY="key1,key2" to rotate between two accounts
+    serpapi_keys: list = field(
+        default_factory=lambda: [
+            k.strip()
+            for k in os.environ.get("SERPAPI_KEY", "").split(",")
+            if k.strip()
+        ]
     )
+    _key_index: int = field(default=0, repr=False)
+
+    def get_next_key(self) -> str:
+        """Get the next API key (round-robin rotation)."""
+        if not self.serpapi_keys:
+            return ""
+        key = self.serpapi_keys[self._key_index % len(self.serpapi_keys)]
+        self._key_index += 1
+        return key
 
     # How many results to fetch per category query
     max_results_per_category: int = 10
