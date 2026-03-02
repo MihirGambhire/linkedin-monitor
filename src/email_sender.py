@@ -253,10 +253,13 @@ def send_email(
     today = datetime.utcnow().strftime("%Y-%m-%d")
     subject = f"{config.subject_prefix} — {total} posts found ({today})"
 
+    # Split comma-separated recipients into a list
+    recipient_list = [r.strip() for r in config.recipient_email.split(",")]
+
     # Build message
     msg = MIMEMultipart("related")
     msg["From"] = config.sender_email
-    msg["To"] = config.recipient_email
+    msg["To"] = ", ".join(recipient_list)  # Display header stays as string
     msg["Subject"] = subject
 
     # Build HTML body
@@ -302,7 +305,7 @@ def send_email(
             server.login(config.sender_email, config.sender_password)
             server.sendmail(
                 config.sender_email,
-                config.recipient_email,
+                recipient_list,  # FIX: pass list instead of raw comma-separated string
                 msg.as_string(),
             )
         logger.info("Email sent successfully! ✅")
