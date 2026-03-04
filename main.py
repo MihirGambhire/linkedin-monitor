@@ -4,19 +4,17 @@ LinkedIn Keyword Monitor for ADOR Digatron
 
 Main orchestrator script that runs the full pipeline:
 1. Search Google for LinkedIn posts matching keyword categories
-2. Capture screenshots of found posts
-3. Send an HTML email digest with results and screenshots
+2. Send an HTML email digest with results
 
 Usage:
     python main.py                           # Full run (all categories)
     python main.py --categories "BESS" "Competition"   # Specific categories
-    python main.py --dry-run                 # Search only, no screenshots or email
-    python main.py --no-screenshots          # Search + email, skip screenshots
+    python main.py --dry-run                 # Search only, no email
     python main.py --max-results 5           # Limit results per category
+    python main.py --time-filter qdr:d       # Past day only
 """
 
 import argparse
-import asyncio
 import json
 import logging
 import sys
@@ -25,11 +23,9 @@ from datetime import datetime
 from src.config import (
     KEYWORD_CATEGORIES,
     EmailConfig,
-    ScreenshotConfig,
     SearchConfig,
 )
 from src.search import search_all_categories
-from src.screenshot import capture_all_screenshots
 from src.email_sender import send_email
 
 # ---------------------------------------------------------------------------
@@ -57,12 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Search and print results without screenshots or email.",
-    )
-    parser.add_argument(
-        "--no-screenshots",
-        action="store_true",
-        help="Skip screenshot capture (faster, smaller emails).",
+        help="Search and print results without sending email.",
     )
     parser.add_argument(
         "--max-results",
@@ -101,19 +92,19 @@ def print_results_summary(results: dict) -> None:
             print()
 
 
-async def main_async(args: argparse.Namespace) -> int:
-    """Async main pipeline."""
+def main():
+    args = parse_args()
 
     logger.info("🚀 LinkedIn Keyword Monitor starting...")
     logger.info(f"   Categories: {args.categories or 'ALL'}")
     logger.info(f"   Dry run: {args.dry_run}")
-    logger.info(f"   Screenshots: {not args.no_screenshots and not args.dry_run}")
+    logger.info(f"   Screenshots: Disabled")
 
     # -----------------------------------------------------------------------
     # Step 1: Search
     # -----------------------------------------------------------------------
     logger.info("=" * 50)
-    logger.info("STEP 1/3 — Searching Google for LinkedIn posts...")
+    logger.info("STEP 1/2 — Searching Google for LinkedIn posts...")
     logger.info("=" * 50)
 
     search_config = SearchConfig(
@@ -129,14 +120,13 @@ async def main_async(args: argparse.Namespace) -> int:
     if total == 0:
         logger.warning("No posts found. Exiting.")
         print_results_summary(results)
-        return 0
+        sys.exit(0)
 
     print_results_summary(results)
 
     # In dry-run mode, just print and exit
     if args.dry_run:
-        logger.info("Dry-run mode — skipping screenshots and email.")
-        # Output JSON for debugging/piping
+        logger.info("Dry-run mode — skipping email.")
         json_results = {
             cat: [
                 {"title": p.title, "url": p.url, "snippet": p.snippet}
@@ -146,44 +136,24 @@ async def main_async(args: argparse.Namespace) -> int:
         }
         print("\n📄 JSON Output:")
         print(json.dumps(json_results, indent=2))
-        return 0
+        sys.exit(0)
 
     # -----------------------------------------------------------------------
-    # Step 2: Screenshots
-    # -----------------------------------------------------------------------
-    screenshots = {}
-    if not args.no_screenshots:
-        logger.info("=" * 50)
-        logger.info("STEP 2/3 — Capturing screenshots...")
-        logger.info("=" * 50)
-
-        screenshot_config = ScreenshotConfig()
-        screenshots = await capture_all_screenshots(results, screenshot_config)
-    else:
-        logger.info("Skipping screenshots (--no-screenshots flag).")
-
-    # -----------------------------------------------------------------------
-    # Step 3: Send email
+    # Step 2: Send email (no screenshots)
     # -----------------------------------------------------------------------
     logger.info("=" * 50)
-    logger.info("STEP 3/3 — Sending email digest...")
+    logger.info("STEP 2/2 — Sending email digest...")
     logger.info("=" * 50)
 
     email_config = EmailConfig()
-    success = send_email(results, screenshots, email_config)
+    success = send_email(results, {}, email_config)
 
     if success:
         logger.info("✅ Pipeline complete! Email sent.")
-        return 0
+        sys.exit(0)
     else:
         logger.error("❌ Pipeline failed at email step.")
-        return 1
-
-
-def main():
-    args = parse_args()
-    exit_code = asyncio.run(main_async(args))
-    sys.exit(exit_code)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
