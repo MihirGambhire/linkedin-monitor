@@ -245,7 +245,7 @@ def send_email(
         )
         return False
 
-    if not config.recipient_email:
+    if not config.recipient_emails:
         logger.error("RECIPIENT_EMAIL not set.")
         return False
 
@@ -256,7 +256,7 @@ def send_email(
     # Build message
     msg = MIMEMultipart("related")
     msg["From"] = config.sender_email
-    msg["To"] = config.recipient_email
+    msg["To"] = ", ".join(config.recipient_emails)
     msg["Subject"] = subject
 
     # Build HTML body
@@ -294,7 +294,7 @@ def send_email(
 
     # Send via SMTP
     try:
-        logger.info(f"Sending email to {config.recipient_email}...")
+        logger.info(f"Sending email to {', '.join(config.recipient_emails)}...")
         with smtplib.SMTP(config.smtp_server, config.smtp_port) as server:
             server.ehlo()
             server.starttls()
@@ -302,7 +302,7 @@ def send_email(
             server.login(config.sender_email, config.sender_password)
             server.sendmail(
                 config.sender_email,
-                config.recipient_email,
+                config.recipient_emails,
                 msg.as_string(),
             )
         logger.info("Email sent successfully! ✅")
