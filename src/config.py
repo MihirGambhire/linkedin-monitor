@@ -130,11 +130,15 @@ class EmailConfig:
     sender_password: str = field(
         default_factory=lambda: os.environ.get("GMAIL_APP_PASSWORD", "")
     )
-    recipient_email: str = field(
-        default_factory=lambda: os.environ.get(
-            "RECIPIENT_EMAIL",
-            os.environ.get("GMAIL_ADDRESS", ""),
-        )
+    recipient_emails: list = field(
+        default_factory=lambda: [
+            e.strip()
+            for e in os.environ.get(
+                "RECIPIENT_EMAIL",
+                os.environ.get("GMAIL_ADDRESS", ""),
+            ).split(",")
+            if e.strip()
+        ]
     )
     subject_prefix: str = "[ADOR Digatron] LinkedIn Keyword Monitor"
 
