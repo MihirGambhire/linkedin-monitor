@@ -3,7 +3,4 @@
 # Google search via SerpAPI
 google-search-results>=2.4.2
 
-# Screenshot capture
-playwright>=1.40.0
-
 # No additional deps needed for email (uses Python stdlib smtplib)
