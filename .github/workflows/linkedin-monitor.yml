@@ -1,32 +1,85 @@
-name: LinkedIn Keyword Monitor
+name: LinkedIn Monitor – ADOR Digatron
 
 on:
   schedule:
-    # Runs Mon–Fri at 3:30 AM UTC = 9:00 AM IST
-    - cron: "30 3 * * 1-5"
-  workflow_dispatch:  # Allow manual runs
+    # 9:00 AM IST = 03:30 UTC
+    - cron: "30 3 * * *"
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (skip email send)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
 
     steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      # ── 2. Python setup ──────────────────────────────────────────────────────
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+          cache: "pip"
 
-      - name: Install dependencies
+      # ── 3. Install dependencies ──────────────────────────────────────────────
+      - name: Install Python packages
         run: pip install -r requirements.txt
 
+      # ── 4. Install Playwright + Chromium ─────────────────────────────────────
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
+      # ── 5. Restore cookie cache (reduces bot-detection across runs) ──────────
+      - name: Restore LinkedIn cookie cache
+        uses: actions/cache@v4
+        with:
+          path: li_cookies.json
+          key: linkedin-cookies-${{ runner.os }}-v1
+          restore-keys: |
+            linkedin-cookies-${{ runner.os }}-
+
+      # ── 6. Run monitor ───────────────────────────────────────────────────────
       - name: Run LinkedIn Monitor
         env:
-          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
-          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
-        run: python main.py --time-filter qdr:w
+          EMAIL_FROM:  ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASS:  ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO:    ${{ secrets.EMAIL_TO }}
+          MAX_POSTS:   ${{ vars.MAX_POSTS || '10' }}
+          SEARCH_DAYS: ${{ vars.SEARCH_DAYS || '7' }}
+          # Optional: override keywords via repo variable (comma-separated)
+          KEYWORDS:    ${{ vars.KEYWORDS || '' }}
+          DRY_RUN:     ${{ github.event.inputs.dry_run || 'false' }}
+        run: python monitor.py
+
+      # ── 7. Upload screenshots as artifact (7-day retention) ──────────────────
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkedin-screenshots-${{ github.run_number }}
+          path: screenshots/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ── 8. Upload cookie cache for next run ───────────────────────────────────
+      - name: Save cookie cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: li_cookies.json
+          key: linkedin-cookies-${{ runner.os }}-v1
