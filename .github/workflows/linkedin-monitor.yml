@@ -3,7 +3,7 @@ name: 🔔 LinkedIn Intelligence Monitor
 on:
   schedule:
     - cron: '30 3 * * *'   # Daily at 9:00 AM IST (3:30 AM UTC)
-  workflow_dispatch:        # Run manually from GitHub UI anytime
+  workflow_dispatch:
 
 jobs:
   monitor:
@@ -24,7 +24,6 @@ jobs:
       - name: 📦 Install dependencies
         run: pip install -r requirements.txt
 
-      # Restore seen_posts.json so we never re-email the same post
       - name: 💾 Restore seen-posts cache
         uses: actions/cache/restore@v4
         with:
@@ -42,7 +41,6 @@ jobs:
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: python monitor.py
 
-      # Always save — overwrites previous entry so deduplication works
       - name: 💾 Save updated seen-posts cache
         if: always()
         uses: actions/cache/save@v4
