@@ -1,2 +1,2 @@
-# LinkedIn Post Monitor — Dependencies
+# LinkedIn Intelligence Monitor — Dependencies
 google-search-results>=2.4.2
