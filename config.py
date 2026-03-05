@@ -1,24 +1,36 @@
 """
-LinkedIn Intelligence Monitor — Configuration
-ADOR Digatron
-Products: Battery/Cell Testers, EOL Testers, Cell Grading Machines,
-          Formation Equipment, Power Conversion Systems
+LinkedIn Strategic Intelligence Monitor — ADOR Digatron
+Products: Battery Testers · Cell Testers · EOL Testers ·
+          Cell Grading Machines · Formation Equipment · Power Conversion Systems
 
-Keywords sourced from senior management, combined with buyer-intent signals.
-Two pipelines:
-  LEAD_SEARCHES       — people/companies likely to BUY from ADOR Digatron
-  COMPETITOR_SEARCHES — what competitors are announcing / doing
+Quota design: 9 searches/day × 31 days = 279/month
+              3 SerpAPI keys × 100/month = 300 available  ✅
+
+Search breakdown:
+  ── Target Accounts & Buyers (6 searches) ──────────────────────────────────
+  S1  Indian gigafactory & cell plant builders  → formation, grading, EOL testers
+  S2  Global cell manufacturers (Asia ops)      → full equipment suite
+  S3  EV OEMs expanding battery validation      → EOL testers, cell testers, cyclers
+  S4  Battery testing service labs              → direct cycler / tester buyers
+  S5  Buyer intent — equipment questions        → anyone publicly asking to buy
+  S6  New battery facility announcements        → greenfield plants = equipment need
+
+  ── Competitor Intelligence (3 searches) ───────────────────────────────────
+  S7  Neware + Arbin          (top 2 direct competitors)
+  S8  Basytec + Maccor + Bitrode
+  S9  Chroma ATE + NH Research + Wonik PNE
 """
 import os
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 🔑  SERPAPI KEYS  (GitHub Secrets: SERPAPI_KEY_1, SERPAPI_KEY_2)
+# 🔑  SERPAPI KEYS  (GitHub Secrets: SERPAPI_KEY_1, SERPAPI_KEY_2, SERPAPI_KEY_3)
 # ══════════════════════════════════════════════════════════════════════════════
 SERPAPI_KEYS = [
     k for k in [
         os.getenv("SERPAPI_KEY_1", ""),
         os.getenv("SERPAPI_KEY_2", ""),
+        os.getenv("SERPAPI_KEY_3", ""),
     ] if k
 ]
 
@@ -26,7 +38,7 @@ SERPAPI_KEYS = [
 # 📧  EMAIL  (Gmail SMTP)
 #     EMAIL_SENDER     → GitHub Secret  (your Gmail address)
 #     EMAIL_PASSWORD   → GitHub Secret  (Gmail App Password, 16 chars)
-#     EMAIL_RECIPIENTS → GitHub Secret  (comma-separated list of addresses)
+#     EMAIL_RECIPIENTS → GitHub Secret  (comma-separated addresses)
 # ══════════════════════════════════════════════════════════════════════════════
 EMAIL_SENDER     = os.getenv("EMAIL_SENDER",    "gambhiremihir@gmail.com")
 EMAIL_PASSWORD   = os.getenv("EMAIL_PASSWORD",  "")
@@ -35,293 +47,192 @@ EMAIL_RECIPIENTS = [e.strip() for e in _raw.split(",") if e.strip()]
 SMTP_HOST        = "smtp.gmail.com"
 SMTP_PORT        = 587
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 🎯  LEAD SEARCHES
-#
-#  Format: list of (label, raw_google_query) tuples.
-#  Each tuple = one SerpAPI API call.
-#
-#  Design:
-#    Senior product keywords are paired with INTENT SIGNAL groups so we only
-#    surface posts from BUYERS, not analysts, journalists, or educators.
-#
-#  Intent signal groups:
-#    _ASKING   → asking peers for a recommendation or vendor
-#    _SOURCING → actively procuring / shortlisting vendors
-#    _BUILDING → new plant / lab / facility = upcoming equipment purchase
-#    _REPLACING → unhappy with competitor = direct sales opportunity
-# ══════════════════════════════════════════════════════════════════════════════
-
-_ASKING = (
-    '"recommend" OR "recommendation" OR "looking for" OR "anyone used" '
-    'OR "which vendor" OR "can anyone suggest" OR "who supplies" '
-    'OR "best option" OR "anyone know" OR "any suggestions"'
-)
-
-_SOURCING = (
-    '"supplier" OR "vendor" OR "sourcing" OR "procurement" '
-    'OR "RFQ" OR "request for quote" OR "tender" OR "shortlisting" '
-    'OR "evaluating" OR "comparing vendors"'
-)
-
-_BUILDING = (
-    '"new plant" OR "new facility" OR "setting up" OR "expanding" '
-    'OR "groundbreaking" OR "commissioning" OR "new line" '
-    'OR "new capacity" OR "greenfield" OR "new lab"'
-)
-
-_REPLACING = (
-    '"alternative to" OR "replace" OR "switch from" '
-    'OR "unhappy with" OR "issues with" OR "looking to replace"'
-)
-
-
-LEAD_SEARCHES = [
-
-    # ── i. Cell / Battery Tester — asking for recommendations ─────────────
-    # R&D labs, cell manufacturers, EV OEMs asking peers which tester to buy
-    (
-        "Battery / Cell Tester — Asking for Recommendation",
-        (
-            'site:linkedin.com '
-            '("Battery Tester" OR "Battery Cycler" OR "Battery Capacity Tester" '
-            ' OR "Battery Aging Machine" OR "Battery Charger-Discharger" '
-            ' OR "Cell Tester" OR "Cell Cycler" OR "Cell Capacity Tester" '
-            ' OR "Cell Aging Machine" OR "Cell Grading Machine") '
-            f'({_ASKING})'
-        ),
-    ),
-
-    # ── i. Cell / Battery Tester — actively sourcing / procuring ──────────
-    (
-        "Battery / Cell Tester — Procurement & Sourcing",
-        (
-            'site:linkedin.com '
-            '("Battery Tester" OR "Battery Cycler" OR "Cell Tester" '
-            ' OR "Cell Cycler" OR "Computer Operated Battery Cycler" '
-            ' OR "Battery Charger-Discharger" OR "Cell Charger Discharger") '
-            f'({_SOURCING})'
-        ),
-    ),
-
-    # ── i. Cell / Battery Tester — new lab setup ──────────────────────────
-    # Companies opening new battery labs = imminent equipment purchase
-    (
-        "New Battery Lab / Testing Facility",
-        (
-            'site:linkedin.com '
-            '("battery lab" OR "battery testing lab" OR "cell testing lab" '
-            ' OR "battery testing facility" OR "electrochemical lab" '
-            ' OR "battery R&D center" OR "battery test center") '
-            f'({_BUILDING})'
-        ),
-    ),
-
-    # ── i. Cell / Battery Tester — competitor replacement ─────────────────
-    (
-        "Battery Tester — Competitor Replacement Signals",
-        (
-            'site:linkedin.com '
-            '("Battery Tester" OR "Battery Cycler" OR "Cell Tester" '
-            ' OR "Cell Cycler" OR "Cell Grading Machine") '
-            f'({_REPLACING})'
-        ),
-    ),
-
-    # ── ii. BESS — Power Conversion System sourcing ────────────────────────
-    # BESS manufacturers need PCS — a direct Digatron product
-    (
-        "BESS / PCS — Equipment Sourcing",
-        (
-            'site:linkedin.com '
-            '("Power Conversion System" OR "PCS" OR "C&I BESS" OR "C&I ESS" '
-            ' OR "ESS for Data Centers" OR "BESS Manufacturing Plant" '
-            ' OR "Battery Pack Assembly Plant" OR "Battery Energy Storage System") '
-            f'({_ASKING} OR {_SOURCING} OR {_BUILDING})'
-        ),
-    ),
-
-    # ── iii. Cell Assembly Line — new plant / equipment sourcing ───────────
-    # Gigafactory builders need formation equipment, grading, PCS
-    (
-        "Cell Assembly Line — New Plant / Equipment",
-        (
-            'site:linkedin.com '
-            '("Lithium ion cell assembly line" OR "Battery cell manufacturing" '
-            ' OR "Pouch cell line" OR "Cylindrical cell line" '
-            ' OR "Prismatic cell assembly" OR "Cell Manufacturing Plant" '
-            ' OR "Battery formation ageing" OR "Cell formation system" '
-            ' OR "Formation testing equipment" OR "Environmental chamber battery" '
-            ' OR "Advanced chemistry cell manufacturing") '
-            f'({_ASKING} OR {_SOURCING} OR {_BUILDING})'
-        ),
-    ),
-
-    # ── iii. GWH-scale plant announcements ────────────────────────────────
-    # GWH projects = large formation + grading + PCS orders
-    (
-        "GWH Scale Battery Plant Announcements",
-        (
-            'site:linkedin.com '
-            '("GWH" OR "gigawatt hour" OR "gigafactory") '
-            '("cell manufacturing" OR "battery plant" OR "assembly line" '
-            ' OR "formation" OR "cell grading" OR "production line") '
-            '("new" OR "expand" OR "build" OR "groundbreaking" '
-            ' OR "commissioning" OR "capacity")'
-        ),
-    ),
-
-    # ── iv. Cell Chemistries — testing equipment needed ───────────────────
-    # New chemistry labs / startups will need testers supporting these chemistries
-    (
-        "New Cell Chemistry Labs Needing Test Equipment",
-        (
-            'site:linkedin.com '
-            '("Sodium Ion" OR "Sodium-Ion" OR "Na-ion" OR "Metal Air" '
-            ' OR "Aluminum Air" OR "Sodium Silicate" OR "Lead Acid" '
-            ' OR "Nickel Cadmium" OR "Ni-Cd" OR "Agnostic Chemistry") '
-            '("tester" OR "cycler" OR "testing" OR "characterization" '
-            ' OR "validation" OR "lab" OR "equipment" OR "formation" OR "new")'
-        ),
-    ),
-
-]
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 🕵️  COMPETITOR SEARCHES
-#
-#  Format: list of (label, raw_google_query) tuples.
-#  Strategy: find LinkedIn posts about competitor activity —
-#    product launches, partnerships, customer wins, new markets, pricing.
-#  Job ads are stripped at query level (-hiring -vacancy).
-# ══════════════════════════════════════════════════════════════════════════════
-
-COMPETITOR_SEARCHES = [
-
-    (
-        "Neware",
-        (
-            'site:linkedin.com "Neware" '
-            '("battery tester" OR "battery cycler" OR "cell tester" '
-            ' OR "new product" OR "launched" OR "partnership" '
-            ' OR "customer" OR "order" OR "contract" OR "cell grading") '
-            '-hiring -vacancy -apply'
-        ),
-    ),
-
-    (
-        "Arbin Instruments",
-        (
-            'site:linkedin.com "Arbin" '
-            '("battery tester" OR "battery cycler" OR "cell tester" '
-            ' OR "new product" OR "launched" OR "partnership" '
-            ' OR "customer" OR "order" OR "contract") '
-            '-hiring -vacancy -apply'
-        ),
-    ),
-
-    (
-        "Basytec",
-        (
-            'site:linkedin.com "Basytec" '
-            '("battery" OR "cell tester" OR "cycler" OR "formation" '
-            ' OR "new product" OR "partnership" OR "customer" OR "contract") '
-            '-hiring -vacancy -apply'
-        ),
-    ),
-
-    (
-        "Maccor",
-        (
-            'site:linkedin.com "Maccor" '
-            '("battery tester" OR "cycler" OR "new product" '
-            ' OR "partnership" OR "customer" OR "contract" OR "expansion") '
-            '-hiring -vacancy -apply'
-        ),
-    ),
-
-    (
-        "Bitrode",
-        (
-            'site:linkedin.com "Bitrode" '
-            '("battery" OR "tester" OR "cycler" '
-            ' OR "new product" OR "partnership" OR "customer" OR "contract") '
-            '-hiring -vacancy -apply'
-        ),
-    ),
-
-    (
-        "Chroma",
-        (
-            'site:linkedin.com "Chroma" '
-            '("battery tester" OR "battery cycler" OR "cell tester" '
-            ' OR "formation" OR "new product" OR "partnership" OR "contract") '
-            '-hiring -vacancy -apply'
-        ),
-    ),
-
-    (
-        "ACEY / Sinexcel / Nebula Electronics / SEMCO",
-        (
-            'site:linkedin.com '
-            '("ACEY" OR "Sinexcel" OR "Nebula Electronics" OR "SEMCO") '
-            '("battery" OR "cell tester" OR "cycler" OR "formation" '
-            ' OR "new product" OR "partnership" OR "customer") '
-            '-hiring -vacancy -apply'
-        ),
-    ),
-
-    (
-        "DNA Technologies / Encore / Indygreen / RePower",
-        (
-            'site:linkedin.com '
-            '("DNA Technologies" OR "Encore Systems" '
-            ' OR "Indygreen Technologies" OR "RePower") '
-            '("battery" OR "tester" OR "cycler" OR "new" '
-            ' OR "partnership" OR "customer" OR "contract") '
-            '-hiring -vacancy -apply'
-        ),
-    ),
-]
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ⚙️  SEARCH SETTINGS
+#     SEARCH_TIME_FILTER: qdr:d = past day (right for daily runs)
 # ══════════════════════════════════════════════════════════════════════════════
-SEARCH_TIME_FILTER     = "qdr:w"   # qdr:d = day, qdr:w = week, qdr:m = month
+SEARCH_TIME_FILTER     = "qdr:d"
 MAX_RESULTS_PER_SEARCH = 10
 
-
 # ══════════════════════════════════════════════════════════════════════════════
-# 🚫  SPAM FILTERS
+# 🔍  THE 9 SEARCHES
+#
+#  Each entry is a dict:
+#    label    → section heading in the email
+#    kind     → "account", "buyer", or "competitor"
+#    query    → raw Google query string (full control)
+#    context  → one-line note explaining why this search matters (shown in email)
 # ══════════════════════════════════════════════════════════════════════════════
+SEARCHES = [
 
-# Applied to LEAD posts — discard anything that is clearly not a buyer signal
-LEAD_SPAM_PHRASES = [
-    "we are hiring", "we're hiring", "job opening", "job opportunity",
-    "apply now", "send your cv", "send your resume", "hiring now",
-    "open position", "career opportunity", "join our team",
-    "new mandate", "we are looking for a", "seeking a",
-    "market to reach", "cagr", "market size", "market report",
-    "research report", "press release", "billion by 20", "million by 20",
-    "webinar", "register now", "join us at", "booth number",
-    "see you at", "meet us at", "fundamentals:", "introduction to",
-    "blog post", "white paper",
+    # ── S1: Indian gigafactory & cell plant builders ───────────────────────
+    # Any new plant, capacity expansion, equipment commissioning from these
+    # companies is a direct sales opportunity for formation + grading + EOL.
+    {
+        "label":   "Indian Gigafactory & Cell Plant Builders",
+        "kind":    "account",
+        "context": "New plant / expansion = opportunity for formation equipment, cell graders & EOL testers",
+        "query": (
+            'site:linkedin.com '
+            '("Waaree" OR "Ola Electric" OR "Agratas" OR "Exide Energy" '
+            ' OR "Amara Raja" OR "Epsilon Advanced Materials" OR "Servotech") '
+            '("gigafactory" OR "cell plant" OR "new facility" OR "production line" '
+            ' OR "capacity expansion" OR "GWh" OR "groundbreaking" OR "inauguration" '
+            ' OR "commissioning" OR "MOU" OR "investment" OR "battery manufacturing")'
+        ),
+    },
+
+    # ── S2: Global cell manufacturers ─────────────────────────────────────
+    # New plants, JVs, supply agreements from the world's biggest cell makers.
+    # Any Asia/India expansion = procurement cycle for our full equipment range.
+    {
+        "label":   "Global Cell Manufacturers — New Plants & Deals",
+        "kind":    "account",
+        "context": "New plant / JV / supply deal from global cell makers = full equipment procurement",
+        "query": (
+            'site:linkedin.com '
+            '("CATL" OR "Samsung SDI" OR "LG Energy Solution" OR "Panasonic Energy" '
+            ' OR "BYD" OR "EVE Energy" OR "CALB" OR "Gotion") '
+            '("new plant" OR "new factory" OR "new facility" OR "gigafactory" '
+            ' OR "joint venture" OR "JV" OR "supply agreement" OR "investment" '
+            ' OR "capacity expansion" OR "GWh" OR "groundbreaking" OR "commissioning")'
+        ),
+    },
+
+    # ── S3: EV OEMs expanding battery validation ───────────────────────────
+    # When OEMs expand in-house battery test centres they buy EOL testers,
+    # pack testers and cell cyclers directly.
+    {
+        "label":   "EV OEMs — Battery Validation Expansion",
+        "kind":    "account",
+        "context": "New battery lab / validation centre = EOL tester, pack tester & cycler opportunity",
+        "query": (
+            'site:linkedin.com '
+            '("Mahindra" OR "Tata Motors" OR "Hyundai" OR "BMW" OR "Stellantis" '
+            ' OR "Maruti Suzuki" OR "Toyota" OR "Volkswagen" OR "Mercedes") '
+            '("battery lab" OR "battery testing" OR "battery validation" '
+            ' OR "EV battery" OR "cell testing" OR "pack testing" '
+            ' OR "new facility" OR "new plant" OR "capacity" OR "commissioning")'
+        ),
+    },
+
+    # ── S4: Battery testing service labs ──────────────────────────────────
+    # TÜV, SGS, Intertek etc. ARE the business of testing — they buy equipment
+    # whenever they open a new lab or expand existing capability.
+    {
+        "label":   "Battery Testing Service Labs — New Capacity",
+        "kind":    "account",
+        "context": "New battery testing lab or capacity expansion = direct cycler / cell tester purchase",
+        "query": (
+            'site:linkedin.com '
+            '("TÜV SÜD" OR "TUV SUD" OR "SGS" OR "Intertek" OR "Bureau Veritas" '
+            ' OR "ARAI" OR "NABL" OR "UL Solutions" OR "Dekra") '
+            '("battery" OR "cell") '
+            '("new lab" OR "new facility" OR "new center" OR "new centre" '
+            ' OR "expansion" OR "commissioning" OR "capability" OR "accreditation")'
+        ),
+    },
+
+    # ── S5: Buyer intent — people publicly asking for equipment ────────────
+    # Anyone on LinkedIn asking which battery tester / cycler / grader to buy.
+    # Rare but the highest-value lead type — direct active buyer.
+    {
+        "label":   "Buyer Intent — Equipment Questions",
+        "kind":    "buyer",
+        "context": "Someone publicly asking which battery tester / cycler / grader to buy",
+        "query": (
+            'site:linkedin.com '
+            '("battery tester" OR "battery cycler" OR "cell tester" '
+            ' OR "formation equipment" OR "cell grader" OR "EOL tester" '
+            ' OR "battery formation" OR "power conversion system") '
+            '("recommend" OR "recommendation" OR "anyone used" OR "looking for" '
+            ' OR "which one" OR "best option" OR "good vendor" OR "supplier" '
+            ' OR "sourcing" OR "rfq" OR "quote" OR "replace" OR "alternative to")'
+        ),
+    },
+
+    # ── S6: New battery facility announcements ─────────────────────────────
+    # Any company announcing a new battery plant, lab, or R&D centre — even
+    # companies not on our radar — is a potential buyer.
+    {
+        "label":   "New Battery Facility Announcements",
+        "kind":    "buyer",
+        "context": "Any new battery plant or lab = potential buyer for our full equipment range",
+        "query": (
+            'site:linkedin.com '
+            '("battery" OR "lithium" OR "cell") '
+            '("new plant" OR "new factory" OR "new lab" OR "new facility" '
+            ' OR "new R&D center" OR "new testing center" OR "groundbreaking" '
+            ' OR "inauguration" OR "first production" OR "start of production" '
+            ' OR "commissioning" OR "GWh" OR "gigafactory") '
+            '-hiring -vacancy -job'
+        ),
+    },
+
+    # ── S7: Neware + Arbin ─────────────────────────────────────────────────
+    # Top 2 direct competitors. New products, contracts, partnerships,
+    # customer wins, expansions — all affect our positioning.
+    {
+        "label":   "Neware & Arbin",
+        "kind":    "competitor",
+        "context": "",
+        "query": (
+            'site:linkedin.com '
+            '("Neware" OR "Arbin Instruments" OR "Arbin") '
+            '("new product" OR "product launch" OR "new contract" OR "order" '
+            ' OR "partnership" OR "distribution" OR "expansion" OR "new customer" '
+            ' OR "customer win" OR "supply agreement" OR "MOU" OR "investment" '
+            ' OR "funding" OR "acquisition" OR "new facility")'
+        ),
+    },
+
+    # ── S8: Basytec + Maccor + Bitrode ────────────────────────────────────
+    {
+        "label":   "Basytec, Maccor & Bitrode",
+        "kind":    "competitor",
+        "context": "",
+        "query": (
+            'site:linkedin.com '
+            '("Basytec" OR "Maccor" OR "Bitrode" OR "Sovema") '
+            '("new product" OR "product launch" OR "new contract" OR "order" '
+            ' OR "partnership" OR "distribution" OR "expansion" OR "new customer" '
+            ' OR "customer win" OR "supply agreement" OR "MOU" OR "investment" '
+            ' OR "funding" OR "acquisition" OR "new facility")'
+        ),
+    },
+
+    # ── S9: Chroma ATE + NH Research + Wonik PNE ──────────────────────────
+    {
+        "label":   "Chroma ATE, NH Research & Wonik PNE",
+        "kind":    "competitor",
+        "context": "",
+        "query": (
+            'site:linkedin.com '
+            '("Chroma ATE" OR "Chroma Systems" OR "NH Research" OR "Wonik PNE") '
+            '("new product" OR "product launch" OR "new contract" OR "order" '
+            ' OR "partnership" OR "distribution" OR "expansion" OR "new customer" '
+            ' OR "customer win" OR "supply agreement" OR "MOU" OR "investment" '
+            ' OR "funding" OR "acquisition" OR "new facility")'
+        ),
+    },
 ]
 
-LEAD_SPAM_WORDS = {
+# ══════════════════════════════════════════════════════════════════════════════
+# 🚫  NOISE FILTER
+#     Word-level and phrase-level checks applied to title + snippet.
+#     Any match = post discarded.
+# ══════════════════════════════════════════════════════════════════════════════
+NOISE_WORDS = {
     "hiring", "vacancy", "vacancies", "recruiter", "recruitment",
-    "internship", "fresher", "applicants", "shortlisted",
+    "internship", "fresher", "applicants",
+    "cagr", "forecast", "segmentation",
 }
 
-# Applied to COMPETITOR posts — only strip pure job ads
-COMPETITOR_SPAM_PHRASES = [
-    "we are hiring", "we're hiring", "job opening",
-    "apply now", "send your cv", "open position", "join our team",
+NOISE_PHRASES = [
+    "market report", "market research", "market size", "market forecast",
+    "market outlook", "market analysis", "market cagr",
+    "we are hiring", "we're hiring", "job opening", "apply now",
+    "open position", "join our team", "send your cv",
+    "register now", "webinar", "podcast",
+    "billion by 20", "million by 20",
 ]
-
-COMPETITOR_SPAM_WORDS = {
-    "hiring", "vacancy", "vacancies", "recruiter",
-}
