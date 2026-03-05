@@ -21,9 +21,14 @@ SERPAPI_KEYS = [
 # ══════════════════════════════════════════════════════════════════════════════
 # 📧  EMAIL  (Outlook SMTP — GitHub Secrets)
 # ══════════════════════════════════════════════════════════════════════════════
-EMAIL_SENDER    = os.getenv("EMAIL_SENDER",    "sales1@digatron.com")
-EMAIL_PASSWORD  = os.getenv("EMAIL_PASSWORD",  "")
-EMAIL_RECIPIENT = os.getenv("EMAIL_RECIPIENT", "gambhiremihir@gmail.com")
+EMAIL_SENDER    = os.getenv("EMAIL_SENDER",   "sales1@digatron.com")
+EMAIL_PASSWORD  = os.getenv("EMAIL_PASSWORD", "")
+
+# Parse comma-separated recipients from a single GitHub Secret.
+# Secret name: EMAIL_RECIPIENTS
+# Example value: alice@digatron.com,bob@digatron.com,charlie@gmail.com
+_raw_recipients  = os.getenv("EMAIL_RECIPIENTS", "gambhiremihir@gmail.com")
+EMAIL_RECIPIENTS = [e.strip() for e in _raw_recipients.split(",") if e.strip()]
 SMTP_HOST       = "smtp-mail.outlook.com"
 SMTP_PORT       = 587
 
