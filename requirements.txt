@@ -1,6 +1,2 @@
-# LinkedIn Keyword Monitor - Dependencies
-
-# Google search via SerpAPI
+# LinkedIn Post Monitor — Dependencies
 google-search-results>=2.4.2
-
-# No additional deps needed for email (uses Python stdlib smtplib)
