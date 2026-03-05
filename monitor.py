@@ -121,6 +121,16 @@ def run_all_searches(key_pool) -> List[Post]:
             url = item.get("link", "").split("?")[0]
             if "linkedin.com" not in url or url in global_seen_urls:
                 continue
+            # Reject personal profile pages (/in/) — just people who work
+            # at a company, not actual posts or company updates.
+            path = "/" + url.split("linkedin.com", 1)[-1].lstrip("/")
+            if path.startswith("/in/"):
+                logger.debug(f"  [skip-profile] {url}")
+                continue
+            # Only keep known content URL types
+            if not any(s in path for s in ["/posts/", "/feed/update/", "/company/", "/pulse/"]):
+                logger.debug(f"  [skip-url] {url}")
+                continue
             global_seen_urls.add(url)
             all_posts.append(Post(
                 url     = url,
