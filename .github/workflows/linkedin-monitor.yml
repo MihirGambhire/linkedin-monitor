@@ -1,85 +1,60 @@
-name: LinkedIn Monitor – ADOR Digatron
+name: 🔔 LinkedIn Intelligence Monitor
 
 on:
   schedule:
-    # 9:00 AM IST = 03:30 UTC
-    - cron: "30 3 * * *"
-
-  # Manual trigger for testing
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Dry run (skip email send)"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
+    - cron: '30 3 * * *'   # Daily at 9:00 AM IST (3:30 AM UTC)
+  workflow_dispatch:        # Run manually from GitHub UI anytime
 
 jobs:
   monitor:
+    name: Leads + Competitor Intel
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
-      - name: Checkout repository
+      - name: 📥 Checkout repo
         uses: actions/checkout@v4
 
-      # ── 2. Python setup ──────────────────────────────────────────────────────
-      - name: Set up Python 3.12
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
+          python-version: '3.12'
+          cache: 'pip'
 
-      # ── 3. Install dependencies ──────────────────────────────────────────────
-      - name: Install Python packages
+      - name: 📦 Install dependencies
         run: pip install -r requirements.txt
 
-      # ── 4. Install Playwright + Chromium ─────────────────────────────────────
-      - name: Install Playwright browsers
-        run: |
-          playwright install chromium
-          playwright install-deps chromium
-
-      # ── 5. Restore cookie cache (reduces bot-detection across runs) ──────────
-      - name: Restore LinkedIn cookie cache
-        uses: actions/cache@v4
+      # Restore seen_posts.json so we never re-email the same post
+      - name: 💾 Restore seen-posts cache
+        uses: actions/cache/restore@v4
         with:
-          path: li_cookies.json
-          key: linkedin-cookies-${{ runner.os }}-v1
+          path: seen_posts.json
+          key: seen-posts-${{ github.ref_name }}
           restore-keys: |
-            linkedin-cookies-${{ runner.os }}-
+            seen-posts-${{ github.ref_name }}
 
-      # ── 6. Run monitor ───────────────────────────────────────────────────────
-      - name: Run LinkedIn Monitor
+      - name: 🚀 Run monitor
         env:
-          EMAIL_FROM:  ${{ secrets.EMAIL_FROM }}
-          EMAIL_PASS:  ${{ secrets.EMAIL_PASS }}
-          EMAIL_TO:    ${{ secrets.EMAIL_TO }}
-          MAX_POSTS:   ${{ vars.MAX_POSTS || '10' }}
-          SEARCH_DAYS: ${{ vars.SEARCH_DAYS || '7' }}
-          # Optional: override keywords via repo variable (comma-separated)
-          KEYWORDS:    ${{ vars.KEYWORDS || '' }}
-          DRY_RUN:     ${{ github.event.inputs.dry_run || 'false' }}
+          SERPAPI_KEY_1:   ${{ secrets.SERPAPI_KEY_1 }}
+          SERPAPI_KEY_2:   ${{ secrets.SERPAPI_KEY_2 }}
+          EMAIL_SENDER:    ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD:  ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
         run: python monitor.py
 
-      # ── 7. Upload screenshots as artifact (7-day retention) ──────────────────
-      - name: Upload screenshots
+      # Always save — overwrites previous entry so deduplication works
+      - name: 💾 Save updated seen-posts cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: seen_posts.json
+          key: seen-posts-${{ github.ref_name }}
+
+      - name: 📋 Upload log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: linkedin-screenshots-${{ github.run_number }}
-          path: screenshots/
-          retention-days: 7
+          name: log-${{ github.run_id }}
+          path: monitor.log
           if-no-files-found: ignore
-
-      # ── 8. Upload cookie cache for next run ───────────────────────────────────
-      - name: Save cookie cache
-        if: always()
-        uses: actions/cache@v4
-        with:
-          path: li_cookies.json
-          key: linkedin-cookies-${{ runner.os }}-v1
+          retention-days: 7
