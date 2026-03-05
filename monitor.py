@@ -74,13 +74,44 @@ def _save_seen(seen: set) -> None:
 
 
 # ── Noise filter ──────────────────────────────────────────────────────────────
+
+# Regex patterns matched against the POST TITLE only.
+# Market research spam titles follow very predictable patterns.
+_TITLE_SPAM_PATTERNS = [
+    # "Market" + qualifier word anywhere in title
+    re.compile(r'\bmarket\b.{0,80}\b(20\d\d|cagr|size|forecast|outlook|analysis|report|research|dynamics|highlights|revenue|demand|drivers|growth|expansion|emerging|segments?|overview|key|opportunities|landscape|scope|trends?|share)\b', re.I),
+    # Noun + "Market" at/near end of title (e.g. "Battery Testing Services Market")
+    re.compile(r'\b(services?|systems?|equipment|solutions?|technologies?|products?|devices?|platforms?)\s+market\b', re.I),
+    # Report title openers
+    re.compile(r'\b(future growth|consistent increase|positive growth|rapid growth|emerging drivers?|key drivers?|strategic opportunities?|competitive landscape|comprehensive (growth|analysis|report)|detailed (report|analysis))\b', re.I),
+    # Classic analytical openers
+    re.compile(r'\b(understanding|projecting|analyzing|navigating|overview of|forecast for|insights?\s+(into|for)|report on|analysis of)\s+the\b', re.I),
+    # Year range patterns
+    re.compile(r'\bfrom 20\d\d[\u2013\-]20\d\d\b', re.I),
+    re.compile(r'\b20\d\d to 20\d\d\b', re.I),
+    # Standalone phrases
+    re.compile(r'\b(industry trends?|market trends?|market size|market share|market cagr|market report|market research|market analysis|market forecast)\b', re.I),
+]
+
+
 def _is_noise(post: Post) -> bool:
+    title    = post.title.lower()
     combined = (post.title + " " + post.snippet).lower()
+
+    # Title-level spam pattern check (catches market research reports)
+    for pattern in _TITLE_SPAM_PATTERNS:
+        if pattern.search(post.title):
+            return True
+
+    # Word-level check on combined text
     words = set(re.findall(r'\b\w+\b', combined))
     if words & config.NOISE_WORDS:
         return True
+
+    # Phrase-level check on combined text
     if any(p in combined for p in config.NOISE_PHRASES):
         return True
+
     return False
 
 
@@ -127,8 +158,10 @@ def run_all_searches(key_pool) -> List[Post]:
             if path.startswith("/in/"):
                 logger.debug(f"  [skip-profile] {url}")
                 continue
-            # Only keep known content URL types
-            if not any(s in path for s in ["/posts/", "/feed/update/", "/company/", "/pulse/"]):
+            # Only keep real post/company URLs.
+            # /pulse/ is LinkedIn Articles — almost entirely market research spam.
+            # /company/ pages are allowed (official company announcements).
+            if not any(s in path for s in ["/posts/", "/feed/update/", "/company/"]):
                 logger.debug(f"  [skip-url] {url}")
                 continue
             global_seen_urls.add(url)
