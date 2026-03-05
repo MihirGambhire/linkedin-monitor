@@ -1,21 +1,20 @@
-name: 🔔 LinkedIn Intelligence Monitor
+name: 📡 LinkedIn Strategic Intelligence
 
 on:
   schedule:
-    - cron: '30 3 * * *'   # Daily at 9:00 AM IST (3:30 AM UTC)
+    - cron: '30 3 * * *'   # Daily 9:00 AM IST (3:30 AM UTC)
   workflow_dispatch:
 
 jobs:
   monitor:
-    name: Leads + Competitor Intel
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
-      - name: 📥 Checkout repo
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python
+      - name: 🐍 Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -29,19 +28,19 @@ jobs:
         with:
           path: seen_posts.json
           key: seen-posts-${{ github.ref_name }}
-          restore-keys: |
-            seen-posts-${{ github.ref_name }}
+          restore-keys: seen-posts-${{ github.ref_name }}
 
       - name: 🚀 Run monitor
         env:
           SERPAPI_KEY_1:    ${{ secrets.SERPAPI_KEY_1 }}
           SERPAPI_KEY_2:    ${{ secrets.SERPAPI_KEY_2 }}
+          SERPAPI_KEY_3:    ${{ secrets.SERPAPI_KEY_3 }}
           EMAIL_SENDER:     ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD:   ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: python monitor.py
 
-      - name: 💾 Save updated seen-posts cache
+      - name: 💾 Save seen-posts cache
         if: always()
         uses: actions/cache/save@v4
         with:
