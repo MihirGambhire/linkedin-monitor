@@ -424,7 +424,7 @@ def send_email(
 
     msg             = MIMEMultipart("alternative")
     msg["From"]     = config.EMAIL_SENDER
-    msg["To"]       = config.EMAIL_RECIPIENT
+    msg["To"]       = ", ".join(config.EMAIL_RECIPIENTS)
     msg["Subject"]  = (
         f"LinkedIn Intel — {total_leads} leads · {total_comp} competitor updates — {today}"
     )
@@ -432,12 +432,12 @@ def send_email(
     msg.attach(MIMEText(_build_html(leads_by_cat, competitors_by_cat),  "html"))
 
     try:
-        logger.info(f"Sending email to {config.EMAIL_RECIPIENT}...")
+        logger.info(f"Sending email to: {', '.join(config.EMAIL_RECIPIENTS)}")
         with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT) as s:
             s.ehlo()
             s.starttls()
             s.login(config.EMAIL_SENDER, config.EMAIL_PASSWORD)
-            s.sendmail(config.EMAIL_SENDER, config.EMAIL_RECIPIENT, msg.as_string())
+            s.sendmail(config.EMAIL_SENDER, config.EMAIL_RECIPIENTS, msg.as_string())
         logger.info("✅ Email sent successfully.")
         return True
     except Exception as e:
