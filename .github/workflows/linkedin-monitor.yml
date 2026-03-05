@@ -35,11 +35,11 @@ jobs:
 
       - name: 🚀 Run monitor
         env:
-          SERPAPI_KEY_1:   ${{ secrets.SERPAPI_KEY_1 }}
-          SERPAPI_KEY_2:   ${{ secrets.SERPAPI_KEY_2 }}
-          EMAIL_SENDER:    ${{ secrets.EMAIL_SENDER }}
-          EMAIL_PASSWORD:  ${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          SERPAPI_KEY_1:    ${{ secrets.SERPAPI_KEY_1 }}
+          SERPAPI_KEY_2:    ${{ secrets.SERPAPI_KEY_2 }}
+          EMAIL_SENDER:     ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD:   ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: python monitor.py
 
       # Always save — overwrites previous entry so deduplication works
