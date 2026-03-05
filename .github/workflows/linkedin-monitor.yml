@@ -23,12 +23,15 @@ jobs:
       - name: 📦 Install dependencies
         run: pip install -r requirements.txt
 
+      # Restore using a stable branch key so every run finds the latest file.
       - name: 💾 Restore seen-posts cache
         uses: actions/cache/restore@v4
         with:
           path: seen_posts.json
-          key: seen-posts-${{ github.ref_name }}
-          restore-keys: seen-posts-${{ github.ref_name }}
+          # run_id makes this unique so the save step never hits a key conflict.
+          key: seen-posts-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            seen-posts-${{ github.ref_name }}-
 
       - name: 🚀 Run monitor
         env:
@@ -40,12 +43,14 @@ jobs:
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: python monitor.py
 
+      # Save key includes run_id — always unique, never conflicts.
+      # restore-keys prefix ensures the next run still finds it.
       - name: 💾 Save seen-posts cache
         if: always()
         uses: actions/cache/save@v4
         with:
           path: seen_posts.json
-          key: seen-posts-${{ github.ref_name }}
+          key: seen-posts-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: 📋 Upload log
         if: always()
