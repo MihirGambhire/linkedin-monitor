@@ -229,10 +229,15 @@ NOISE_WORDS = {
 }
 
 NOISE_PHRASES = [
+    # Market research spam
     "market report", "market research", "market size", "market forecast",
-    "market outlook", "market analysis", "market cagr",
+    "market outlook", "market analysis", "market cagr", "market dynamics",
+    "market highlights", "market revenue", "market demand",
+    "key players", "leading players", "major players",
+    "billion by 20", "million by 20", "from 2026", "from 2025",
+    # Jobs
     "we are hiring", "we're hiring", "job opening", "apply now",
     "open position", "join our team", "send your cv",
+    # Events
     "register now", "webinar", "podcast",
-    "billion by 20", "million by 20",
 ]
