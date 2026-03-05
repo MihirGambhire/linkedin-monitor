@@ -19,9 +19,9 @@ SERPAPI_KEYS = [
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 📧  EMAIL  (Outlook SMTP — GitHub Secrets)
+# 📧  EMAIL  (Gmail SMTP — GitHub Secrets)
 # ══════════════════════════════════════════════════════════════════════════════
-EMAIL_SENDER    = os.getenv("EMAIL_SENDER",   "sales1@digatron.com")
+EMAIL_SENDER    = os.getenv("EMAIL_SENDER",   "gambhiremihir@gmail.com")
 EMAIL_PASSWORD  = os.getenv("EMAIL_PASSWORD", "")
 
 # Parse comma-separated recipients from a single GitHub Secret.
@@ -29,7 +29,9 @@ EMAIL_PASSWORD  = os.getenv("EMAIL_PASSWORD", "")
 # Example value: alice@digatron.com,bob@digatron.com,charlie@gmail.com
 _raw_recipients  = os.getenv("EMAIL_RECIPIENTS", "gambhiremihir@gmail.com")
 EMAIL_RECIPIENTS = [e.strip() for e in _raw_recipients.split(",") if e.strip()]
-SMTP_HOST       = "smtp-mail.outlook.com"
+# Gmail SMTP — use a Google App Password (not your regular password)
+# Enable: myaccount.google.com → Security → 2-Step Verification → App Passwords
+SMTP_HOST       = "smtp.gmail.com"
 SMTP_PORT       = 587
 
 # ══════════════════════════════════════════════════════════════════════════════
