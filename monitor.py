@@ -1,14 +1,13 @@
 """
-LinkedIn Post Monitor — SerpAPI Edition
-Runs two separate pipelines and sends one consolidated email:
+LinkedIn Intelligence Monitor — ADOR Digatron
+Runs two pipelines via SerpAPI and sends one consolidated email:
 
   Section 1 — POTENTIAL CUSTOMERS
-    Posts from people actively looking to buy battery test/formation equipment,
-    set up manufacturing lines, or procure BESS systems.
+    People/companies actively looking to buy battery test, formation,
+    grading, or power conversion equipment.
 
   Section 2 — COMPETITOR INTELLIGENCE
-    Posts from or about Neware, Arbin, Basytec, Maccor, Bitrode —
-    new products, partnerships, expansions, customer wins.
+    What Neware, Arbin, Basytec, Maccor, Bitrode, Chroma etc. are doing.
 
 No browser / Playwright / Selenium required.
 """
@@ -19,11 +18,11 @@ import os
 import re
 import smtplib
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from itertools import cycle
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from serpapi import GoogleSearch
 
@@ -49,7 +48,6 @@ class Post:
         self.snippet  = snippet.strip()
         self.category = category
         self.kind     = kind   # "lead" or "competitor"
-        self.score    = 0
 
     def __hash__(self):
         return hash(self.url)
@@ -82,28 +80,7 @@ def _key_cycle():
     return cycle(config.SERPAPI_KEYS)
 
 
-# ── Search ────────────────────────────────────────────────────────────────────
-def _build_lead_query(keywords: List[str]) -> str:
-    """
-    Target LinkedIn posts where someone is actively looking to buy.
-    Searches linkedin.com/posts and linkedin.com/feed/update.
-    """
-    site   = "site:linkedin.com/posts OR site:linkedin.com/feed/update"
-    kw_or  = " OR ".join(f'"{kw}"' for kw in keywords)
-    return f"{site} ({kw_or})"
-
-
-def _build_competitor_query(keywords: List[str]) -> str:
-    """
-    Find competitor mentions/announcements on LinkedIn.
-    Broader site match — competitor profiles and company pages also relevant.
-    """
-    site   = "site:linkedin.com"
-    kw_or  = " OR ".join(f'"{kw}"' for kw in keywords)
-    # Exclude job-related results at query level
-    return f"{site} ({kw_or}) -hiring -vacancy -apply"
-
-
+# ── SerpAPI call ──────────────────────────────────────────────────────────────
 def _serpapi_search(query: str, api_key: str) -> List[dict]:
     params = {
         "engine":  "google",
@@ -122,16 +99,19 @@ def _serpapi_search(query: str, api_key: str) -> List[dict]:
         return []
 
 
-def search_leads(key_pool) -> List[Post]:
-    """Search all LEAD_CATEGORIES and return raw Post objects."""
+# ── Run a list of (label, query) searches ────────────────────────────────────
+def _run_searches(
+    searches: List[Tuple[str, str]],
+    kind: str,
+    key_pool,
+) -> List[Post]:
     all_posts: List[Post] = []
     seen_urls: set = set()
 
-    for category, keywords in config.LEAD_CATEGORIES.items():
+    for label, query in searches:
         api_key = next(key_pool)
-        query   = _build_lead_query(keywords)
-        logger.info(f"[LEAD] {category}")
-        logger.info(f"  Query: {query[:120]}...")
+        logger.info(f"[{kind.upper()}] {label}")
+        logger.info(f"  Query: {query[:130]}...")
 
         organic = _serpapi_search(query, api_key)
         logger.info(f"  → {len(organic)} raw results")
@@ -145,8 +125,8 @@ def search_leads(key_pool) -> List[Post]:
                 url      = url,
                 title    = item.get("title",   ""),
                 snippet  = item.get("snippet", ""),
-                category = category,
-                kind     = "lead",
+                category = label,
+                kind     = kind,
             ))
 
         time.sleep(1)
@@ -154,83 +134,43 @@ def search_leads(key_pool) -> List[Post]:
     return all_posts
 
 
-def search_competitors(key_pool) -> List[Post]:
-    """Search all COMPETITOR_CATEGORIES and return raw Post objects."""
-    all_posts: List[Post] = []
-    seen_urls: set = set()
-
-    for category, keywords in config.COMPETITOR_CATEGORIES.items():
-        api_key = next(key_pool)
-        query   = _build_competitor_query(keywords)
-        logger.info(f"[COMPETITOR] {category}")
-        logger.info(f"  Query: {query[:120]}...")
-
-        organic = _serpapi_search(query, api_key)
-        logger.info(f"  → {len(organic)} raw results")
-
-        for item in organic:
-            url = item.get("link", "").split("?")[0]
-            if "linkedin.com" not in url or url in seen_urls:
-                continue
-            seen_urls.add(url)
-            all_posts.append(Post(
-                url      = url,
-                title    = item.get("title",   ""),
-                snippet  = item.get("snippet", ""),
-                category = category,
-                kind     = "competitor",
-            ))
-
-        time.sleep(1)
-
-    return all_posts
-
-
-# ── Scoring & filtering ───────────────────────────────────────────────────────
-def _score_lead(post: Post) -> int:
-    combined = (post.title + " " + post.snippet).lower()
-    score    = 5  # base
-    for phrase, pts in config.INTENT_PHRASES.items():
-        if phrase.lower() in combined:
-            score += pts
-    return score
+# ── Spam filtering ────────────────────────────────────────────────────────────
+def _combined_text(post: Post) -> str:
+    return (post.title + " " + post.snippet).lower()
 
 
 def _is_lead_spam(post: Post) -> bool:
-    combined = (post.title + " " + post.snippet).lower()
-    # Phrase-level check (catches multi-word spam patterns)
-    if any(p.lower() in combined for p in config.LEAD_SPAM_PHRASES):
+    text = _combined_text(post)
+    if any(p.lower() in text for p in config.LEAD_SPAM_PHRASES):
         return True
-    # Word-level check for short high-signal job/noise words
-    words = set(re.findall(r'\b\w+\b', combined))
-    if words & {"hiring", "vacancy", "vacancies", "recruiter", "recruitment",
-                 "internship", "fresher", "applicants"}:
+    words = set(re.findall(r'\b\w+\b', text))
+    if words & config.LEAD_SPAM_WORDS:
         return True
     return False
 
 
 def _is_competitor_spam(post: Post) -> bool:
-    combined = (post.title + " " + post.snippet).lower()
-    return any(p.lower() in combined for p in config.COMPETITOR_SPAM_PHRASES)
+    text = _combined_text(post)
+    if any(p.lower() in text for p in config.COMPETITOR_SPAM_PHRASES):
+        return True
+    words = set(re.findall(r'\b\w+\b', text))
+    if words & config.COMPETITOR_SPAM_WORDS:
+        return True
+    return False
 
 
+# ── Filter pipelines ──────────────────────────────────────────────────────────
 def filter_leads(posts: List[Post], seen: set) -> List[Post]:
     accepted = []
     for p in posts:
         if p.url in seen:
-            logger.debug(f"  [skip] Already seen: {p.url}")
+            logger.debug(f"  [skip-seen] {p.url}")
             continue
         if _is_lead_spam(p):
-            logger.debug(f"  [skip] Spam: {p.title[:60]}")
+            logger.debug(f"  [skip-spam] {p.title[:70]}")
             continue
-        p.score = _score_lead(p)
-        if p.score < config.MIN_LEAD_SCORE:
-            logger.debug(f"  [skip] Low score ({p.score}): {p.title[:60]}")
-            continue
-        logger.info(f"  ✅ Lead accepted (score={p.score}): {p.title[:60]}")
+        logger.info(f"  ✅ Lead: {p.title[:70]}")
         accepted.append(p)
-    # Sort best leads first
-    accepted.sort(key=lambda x: x.score, reverse=True)
     return accepted
 
 
@@ -238,160 +178,142 @@ def filter_competitors(posts: List[Post], seen: set) -> List[Post]:
     accepted = []
     for p in posts:
         if p.url in seen:
-            logger.debug(f"  [skip] Already seen: {p.url}")
+            logger.debug(f"  [skip-seen] {p.url}")
             continue
         if _is_competitor_spam(p):
-            logger.debug(f"  [skip] Job ad: {p.title[:60]}")
+            logger.debug(f"  [skip-spam] {p.title[:70]}")
             continue
-        logger.info(f"  ✅ Competitor post accepted: {p.title[:60]}")
+        logger.info(f"  ✅ Competitor: {p.title[:70]}")
         accepted.append(p)
     return accepted
 
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 def _card(p: Post) -> str:
+    display = p.title if p.title and p.title.lower() not in ("", "linkedin") else p.url
     return f"""
     <div style="border:1px solid #e0e0e0;border-radius:8px;padding:16px 20px;
                 margin-bottom:12px;background:#fff;">
-      <p style="margin:0 0 6px;font-size:14px;font-weight:600;">
+      <p style="margin:0 0 6px;font-size:14px;font-weight:600;color:#1a1a1a;">
         <a href="{p.url}" style="color:#0077B5;text-decoration:none;"
-           target="_blank">{p.title or p.url}</a>
+           target="_blank">{display}</a>
       </p>
-      <p style="margin:0 0 14px;font-size:13px;color:#555;line-height:1.5;">
+      <p style="margin:0 0 14px;font-size:13px;color:#555;line-height:1.6;">
         {p.snippet}
       </p>
       <a href="{p.url}"
          style="display:inline-block;background:#0077B5;color:#fff;
-                text-decoration:none;padding:6px 14px;border-radius:5px;
+                text-decoration:none;padding:6px 16px;border-radius:5px;
                 font-size:12px;font-weight:600;">
         View on LinkedIn →
       </a>
     </div>"""
 
 
-def _section_header(title: str, subtitle: str, color: str) -> str:
+def _category_block(label: str, posts: List[Post], accent: str) -> str:
+    cards = "".join(_card(p) for p in posts)
+    count = len(posts)
     return f"""
-    <div style="background:{color};border-radius:8px 8px 0 0;
-                padding:14px 20px;margin-top:28px;">
-      <div style="color:#fff;font-size:16px;font-weight:700;">{title}</div>
-      <div style="color:rgba(255,255,255,0.85);font-size:12px;margin-top:3px;">
-        {subtitle}
+    <div style="margin-bottom:28px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;
+                  letter-spacing:1px;color:{accent};padding-bottom:6px;
+                  border-bottom:2px solid {accent};margin-bottom:14px;">
+        {label} &nbsp;·&nbsp; {count} post{"s" if count > 1 else ""}
       </div>
-    </div>
-    <div style="border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;
-                padding:16px;margin-bottom:8px;background:#fafafa;">"""
+      {cards}
+    </div>"""
 
 
 def _build_html(
     leads_by_cat: Dict[str, List[Post]],
-    competitors_by_cat: Dict[str, List[Post]],
+    comp_by_cat: Dict[str, List[Post]],
 ) -> str:
     total_leads = sum(len(v) for v in leads_by_cat.values())
-    total_comp  = sum(len(v) for v in competitors_by_cat.values())
-    now         = datetime.utcnow().strftime("%b %d, %Y")
+    total_comp  = sum(len(v) for v in comp_by_cat.values())
+    now         = datetime.now(timezone.utc).strftime("%b %d, %Y")
 
-    # ── Lead sections ─────────────────────────────────────────────────────────
-    lead_html = ""
-    if total_leads:
-        for cat, posts in leads_by_cat.items():
-            if not posts:
-                continue
-            lead_html += _section_header(
-                cat,
-                f"{len(posts)} potential customer post{'s' if len(posts) > 1 else ''}",
-                "#0077B5",
-            )
-            for p in posts:
-                lead_html += _card(p)
-            lead_html += "</div>"
-    else:
-        lead_html = """
-        <div style="color:#999;font-style:italic;padding:12px 0;">
-          No new buyer-intent posts found this period.
-        </div>"""
+    lead_html = (
+        "".join(_category_block(cat, posts, "#0077B5")
+                for cat, posts in leads_by_cat.items() if posts)
+        or '<p style="color:#999;font-style:italic;">No new buyer-intent posts this period.</p>'
+    )
 
-    # ── Competitor sections ───────────────────────────────────────────────────
-    comp_html = ""
-    if total_comp:
-        for cat, posts in competitors_by_cat.items():
-            if not posts:
-                continue
-            comp_html += _section_header(
-                cat,
-                f"{len(posts)} update{'s' if len(posts) > 1 else ''}",
-                "#c0392b",
-            )
-            for p in posts:
-                comp_html += _card(p)
-            comp_html += "</div>"
-    else:
-        comp_html = """
-        <div style="color:#999;font-style:italic;padding:12px 0;">
-          No competitor activity found this period.
-        </div>"""
+    comp_html = (
+        "".join(_category_block(cat, posts, "#b03020")
+                for cat, posts in comp_by_cat.items() if posts)
+        or '<p style="color:#999;font-style:italic;">No competitor activity found this period.</p>'
+    )
 
     return f"""<!DOCTYPE html>
 <html>
-<body style="margin:0;padding:0;background:#f4f4f4;
+<body style="margin:0;padding:0;background:#f0f2f5;
              font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
   <div style="max-width:660px;margin:30px auto;background:#fff;
               border-radius:12px;overflow:hidden;
-              box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+              box-shadow:0 2px 12px rgba(0,0,0,0.1);">
 
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#0077B5,#004f7c);
-                padding:26px 32px;">
-      <div style="color:#fff;font-size:20px;font-weight:700;">
+    <div style="background:linear-gradient(135deg,#004f7c,#0077B5);padding:28px 32px;">
+      <div style="color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">
         🔍 LinkedIn Intelligence Report
       </div>
-      <div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:5px;">
+      <div style="color:rgba(255,255,255,0.75);font-size:13px;margin-top:4px;">
         ADOR Digatron &nbsp;·&nbsp; {now}
       </div>
-      <div style="margin-top:14px;display:flex;gap:16px;">
+      <div style="display:flex;gap:12px;margin-top:16px;">
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;
-                    padding:8px 16px;text-align:center;">
-          <div style="color:#fff;font-size:22px;font-weight:700;">{total_leads}</div>
-          <div style="color:rgba(255,255,255,0.8);font-size:11px;">Potential Leads</div>
+                    padding:10px 20px;text-align:center;min-width:80px;">
+          <div style="color:#fff;font-size:26px;font-weight:700;">{total_leads}</div>
+          <div style="color:rgba(255,255,255,0.8);font-size:11px;margin-top:2px;">
+            Potential Leads
+          </div>
         </div>
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;
-                    padding:8px 16px;text-align:center;">
-          <div style="color:#fff;font-size:22px;font-weight:700;">{total_comp}</div>
-          <div style="color:rgba(255,255,255,0.8);font-size:11px;">Competitor Updates</div>
+                    padding:10px 20px;text-align:center;min-width:80px;">
+          <div style="color:#fff;font-size:26px;font-weight:700;">{total_comp}</div>
+          <div style="color:rgba(255,255,255,0.8);font-size:11px;margin-top:2px;">
+            Competitor Updates
+          </div>
         </div>
       </div>
     </div>
 
-    <div style="padding:24px 32px;">
+    <div style="padding:28px 32px;">
 
-      <!-- Section 1: Potential Customers -->
-      <div style="font-size:17px;font-weight:700;color:#333;
-                  border-left:4px solid #0077B5;padding-left:12px;margin-bottom:4px;">
-        🎯 Potential Customers
-      </div>
-      <div style="font-size:12px;color:#888;margin-bottom:8px;padding-left:16px;">
-        People actively looking to buy battery test, formation, or manufacturing equipment
+      <!-- Section 1: Leads -->
+      <div style="border-left:4px solid #0077B5;padding-left:12px;margin-bottom:20px;">
+        <div style="font-size:17px;font-weight:700;color:#1a1a1a;">
+          🎯 Potential Customers
+        </div>
+        <div style="font-size:12px;color:#888;margin-top:3px;">
+          Companies and individuals actively looking to buy battery test,
+          formation, grading or power conversion equipment
+        </div>
       </div>
       {lead_html}
 
-      <!-- Section 2: Competitor Intelligence -->
-      <div style="font-size:17px;font-weight:700;color:#333;margin-top:36px;
-                  border-left:4px solid #c0392b;padding-left:12px;margin-bottom:4px;">
-        🕵️ Competitor Intelligence
-      </div>
-      <div style="font-size:12px;color:#888;margin-bottom:8px;padding-left:16px;">
-        Recent activity from Neware, Arbin, Basytec, Maccor, Bitrode
+      <!-- Section 2: Competitors -->
+      <div style="border-left:4px solid #b03020;padding-left:12px;
+                  margin-top:36px;margin-bottom:20px;">
+        <div style="font-size:17px;font-weight:700;color:#1a1a1a;">
+          🕵️ Competitor Intelligence
+        </div>
+        <div style="font-size:12px;color:#888;margin-top:3px;">
+          Recent activity from Neware, Arbin, Basytec, Maccor, Bitrode,
+          Chroma, ACEY, Sinexcel and others
+        </div>
       </div>
       {comp_html}
 
     </div>
 
     <!-- Footer -->
-    <div style="background:#f9f9f9;padding:14px 32px;text-align:center;
-                font-size:11px;color:#aaa;border-top:1px solid #eee;">
+    <div style="background:#f8f8f8;border-top:1px solid #eee;
+                padding:14px 32px;text-align:center;
+                font-size:11px;color:#bbb;">
       Auto-generated by LinkedIn Intelligence Monitor &nbsp;·&nbsp;
-      {datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC
+      {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")} UTC
     </div>
-
   </div>
 </body>
 </html>"""
@@ -399,22 +321,20 @@ def _build_html(
 
 def _build_plain(
     leads_by_cat: Dict[str, List[Post]],
-    competitors_by_cat: Dict[str, List[Post]],
+    comp_by_cat: Dict[str, List[Post]],
 ) -> str:
-    lines = [
-        "LinkedIn Intelligence Report — ADOR Digatron",
-        f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
-        "",
-        "══ POTENTIAL CUSTOMERS ══",
-    ]
+    now   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines = [f"LinkedIn Intelligence Report — ADOR Digatron", f"Generated: {now}", ""]
+
+    lines.append("══ POTENTIAL CUSTOMERS ══")
     for cat, posts in leads_by_cat.items():
         if posts:
             lines.append(f"\n── {cat} ({len(posts)}) ──")
             for i, p in enumerate(posts, 1):
                 lines += [f"  {i}. {p.title}", f"     {p.snippet[:200]}", f"     {p.url}", ""]
 
-    lines += ["", "══ COMPETITOR INTELLIGENCE ══"]
-    for cat, posts in competitors_by_cat.items():
+    lines.append("\n══ COMPETITOR INTELLIGENCE ══")
+    for cat, posts in comp_by_cat.items():
         if posts:
             lines.append(f"\n── {cat} ({len(posts)}) ──")
             for i, p in enumerate(posts, 1):
@@ -425,86 +345,86 @@ def _build_plain(
 
 def send_email(
     leads_by_cat: Dict[str, List[Post]],
-    competitors_by_cat: Dict[str, List[Post]],
+    comp_by_cat: Dict[str, List[Post]],
 ) -> bool:
     total_leads = sum(len(v) for v in leads_by_cat.values())
-    total_comp  = sum(len(v) for v in competitors_by_cat.values())
-    today       = datetime.utcnow().strftime("%Y-%m-%d")
+    total_comp  = sum(len(v) for v in comp_by_cat.values())
+    today       = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    msg             = MIMEMultipart("alternative")
-    msg["From"]     = config.EMAIL_SENDER
-    msg["To"]       = ", ".join(config.EMAIL_RECIPIENTS)
-    msg["Subject"]  = (
-        f"LinkedIn Intel — {total_leads} leads · {total_comp} competitor updates — {today}"
+    msg            = MIMEMultipart("alternative")
+    msg["From"]    = config.EMAIL_SENDER
+    msg["To"]      = ", ".join(config.EMAIL_RECIPIENTS)
+    msg["Subject"] = (
+        f"LinkedIn Intel — {total_leads} leads · "
+        f"{total_comp} competitor updates — {today}"
     )
-    msg.attach(MIMEText(_build_plain(leads_by_cat, competitors_by_cat), "plain"))
-    msg.attach(MIMEText(_build_html(leads_by_cat, competitors_by_cat),  "html"))
+    msg.attach(MIMEText(_build_plain(leads_by_cat, comp_by_cat), "plain"))
+    msg.attach(MIMEText(_build_html(leads_by_cat, comp_by_cat),  "html"))
 
     try:
-        logger.info(f"Sending email to: {', '.join(config.EMAIL_RECIPIENTS)}")
+        logger.info(f"Sending to: {', '.join(config.EMAIL_RECIPIENTS)}")
         with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT) as s:
             s.ehlo()
             s.starttls()
             s.login(config.EMAIL_SENDER, config.EMAIL_PASSWORD)
             s.sendmail(config.EMAIL_SENDER, config.EMAIL_RECIPIENTS, msg.as_string())
-        logger.info("✅ Email sent successfully.")
+        logger.info("✅ Email sent.")
         return True
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error(f"Email failed: {e}")
         return False
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     logger.info("=" * 60)
-    logger.info(f"LinkedIn Monitor — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    logger.info(f"Lead categories     : {len(config.LEAD_CATEGORIES)}")
-    logger.info(f"Competitor categories: {len(config.COMPETITOR_CATEGORIES)}")
+    logger.info(f"LinkedIn Monitor — {now}")
+    logger.info(f"Lead searches      : {len(config.LEAD_SEARCHES)}")
+    logger.info(f"Competitor searches: {len(config.COMPETITOR_SEARCHES)}")
     logger.info("=" * 60)
 
     if not config.SERPAPI_KEYS:
-        logger.error(
-            "No SerpAPI keys found. "
-            "Set SERPAPI_KEY_1 and/or SERPAPI_KEY_2 as GitHub Secrets."
-        )
+        logger.error("No SerpAPI keys found. Set SERPAPI_KEY_1 / SERPAPI_KEY_2.")
         return
 
+    logger.info(f"Using {len(config.SERPAPI_KEYS)} SerpAPI key(s) with round-robin rotation.")
     seen     = _load_seen()
     key_pool = _key_cycle()
 
-    # ── Run both pipelines ────────────────────────────────────────────────────
+    # ── Lead pipeline ─────────────────────────────────────────────────────────
     logger.info("── Searching for potential customers...")
-    raw_leads       = search_leads(key_pool)
-    logger.info(f"   Raw: {len(raw_leads)} | Filtering...")
-    filtered_leads  = filter_leads(raw_leads, seen)
+    raw_leads      = _run_searches(config.LEAD_SEARCHES, "lead", key_pool)
+    logger.info(f"   Raw: {len(raw_leads)}")
+    filtered_leads = filter_leads(raw_leads, seen)
     logger.info(f"   Accepted: {len(filtered_leads)}")
 
+    # ── Competitor pipeline ───────────────────────────────────────────────────
     logger.info("── Searching competitor activity...")
-    raw_competitors      = search_competitors(key_pool)
-    logger.info(f"   Raw: {len(raw_competitors)} | Filtering...")
-    filtered_competitors = filter_competitors(raw_competitors, seen)
-    logger.info(f"   Accepted: {len(filtered_competitors)}")
+    raw_comp      = _run_searches(config.COMPETITOR_SEARCHES, "competitor", key_pool)
+    logger.info(f"   Raw: {len(raw_comp)}")
+    filtered_comp = filter_competitors(raw_comp, seen)
+    logger.info(f"   Accepted: {len(filtered_comp)}")
 
     # ── Group by category ─────────────────────────────────────────────────────
     leads_by_cat: Dict[str, List[Post]] = {}
     for p in filtered_leads:
         leads_by_cat.setdefault(p.category, []).append(p)
 
-    competitors_by_cat: Dict[str, List[Post]] = {}
-    for p in filtered_competitors:
-        competitors_by_cat.setdefault(p.category, []).append(p)
+    comp_by_cat: Dict[str, List[Post]] = {}
+    for p in filtered_comp:
+        comp_by_cat.setdefault(p.category, []).append(p)
 
-    # ── Send email only if there is something to report ───────────────────────
-    if not filtered_leads and not filtered_competitors:
+    # ── Send only if something to report ─────────────────────────────────────
+    if not filtered_leads and not filtered_comp:
         logger.info("Nothing new to report. No email sent.")
         return
 
-    if send_email(leads_by_cat, competitors_by_cat):
-        # Persist seen URLs only after successful send
-        for p in filtered_leads + filtered_competitors:
+    if send_email(leads_by_cat, comp_by_cat):
+        for p in filtered_leads + filtered_comp:
             seen.add(p.url)
         _save_seen(seen)
-        logger.info(f"seen_posts.json updated ({len(seen)} total URLs tracked).")
+        logger.info(f"seen_posts.json updated ({len(seen)} URLs tracked).")
 
     logger.info("=" * 60)
     logger.info("Monitor complete.")
