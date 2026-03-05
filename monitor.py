@@ -16,6 +16,7 @@ No browser / Playwright / Selenium required.
 import json
 import logging
 import os
+import re
 import smtplib
 import time
 from datetime import datetime
@@ -197,7 +198,15 @@ def _score_lead(post: Post) -> int:
 
 def _is_lead_spam(post: Post) -> bool:
     combined = (post.title + " " + post.snippet).lower()
-    return any(p.lower() in combined for p in config.LEAD_SPAM_PHRASES)
+    # Phrase-level check (catches multi-word spam patterns)
+    if any(p.lower() in combined for p in config.LEAD_SPAM_PHRASES):
+        return True
+    # Word-level check for short high-signal job/noise words
+    words = set(re.findall(r'\b\w+\b', combined))
+    if words & {"hiring", "vacancy", "vacancies", "recruiter", "recruitment",
+                 "internship", "fresher", "applicants"}:
+        return True
+    return False
 
 
 def _is_competitor_spam(post: Post) -> bool:
